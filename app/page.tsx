@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import TravelMap from "./components/TravelMap"
 import { calculateTotalDistance } from "./utils/distance"
+import LocationAutocomplete from "@/components/LocationAutocomplete"
 
 interface TravelStop {
   id: string
@@ -50,12 +51,14 @@ export default function TravelJournal() {
   const [newStop, setNewStop] = useState({
     date: "",
     location: "",
+    coordinates: null as null | { lat: number; lng: number },
     description: "",
   })
   const [errors, setErrors] = useState({
     date: false,
     location: false,
     description: false,
+    coordinates: false,
   })
   const [stopToDelete, setStopToDelete] = useState<TravelStop | null>(null)
 
@@ -64,28 +67,23 @@ export default function TravelJournal() {
       date: !newStop.date,
       location: !newStop.location,
       description: !newStop.description,
+      coordinates: !newStop.coordinates,
     }
-    setErrors(newErrors)
+    setErrors(newErrors as any)
 
-    if (newStop.date && newStop.location && newStop.description) {
-      // In a real app, you'd geocode the location to get coordinates
-      const mockCoordinates = {
-        lat: 40.7128 + Math.random() * 10,
-        lng: -74.006 + Math.random() * 10,
-      }
-
+    if (newStop.date && newStop.location && newStop.description && newStop.coordinates) {
       const stop: TravelStop = {
         id: Date.now().toString(),
         date: newStop.date,
         location: newStop.location,
-        coordinates: mockCoordinates,
+        coordinates: newStop.coordinates,
         description: newStop.description,
       }
 
       setStops([...stops, stop])
-      setNewStop({ date: "", location: "", description: "" })
+      setNewStop({ date: "", location: "", coordinates: null, description: "" })
       setShowForm(false)
-      setErrors({ date: false, location: false, description: false })
+      setErrors({ date: false, location: false, description: false, coordinates: false })
     }
   }
 
@@ -164,18 +162,19 @@ export default function TravelJournal() {
                       <Label htmlFor="location" className="text-sm font-medium text-gray-700">
                         Location
                       </Label>
-                      <Input
-                        id="location"
-                        placeholder="City, Country"
+                      <LocationAutocomplete
                         value={newStop.location}
-                        onChange={(e) => {
-                          setNewStop({ ...newStop, location: e.target.value })
+                        onChange={({ name, lat, lon }) => {
+                          setNewStop({ ...newStop, location: name, coordinates: { lat, lng: lon } })
                           setErrors({ ...errors, location: false })
                         }}
-                        className={`mt-1 ${errors.location ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
+                        placeholder="City, Country"
                       />
                       {errors.location && (
                         <p className="mt-1 text-sm text-red-500">Please enter a location</p>
+                      )}
+                      {errors.coordinates && (
+                        <p className="mt-1 text-sm text-red-500">Please select a valid location from the list</p>
                       )}
                     </div>
                   </div>

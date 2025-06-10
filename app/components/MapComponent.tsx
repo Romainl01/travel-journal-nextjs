@@ -2,6 +2,7 @@
 
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet'
 import { Icon } from 'leaflet'
+import { useEffect, useMemo, useState } from 'react'
 
 interface TravelStop {
   id: string
@@ -13,11 +14,38 @@ interface TravelStop {
 
 interface MapComponentProps {
   stops: TravelStop[]
-  customIcon: Icon
 }
 
-export default function MapComponent({ stops, customIcon }: MapComponentProps) {
-  // Get coordinates for the polyline
+export default function MapComponent({ stops }: MapComponentProps) {
+  // Dynamically import leaflet and leaflet.css only on client for the icon
+  const [L, setL] = useState<any>(null);
+  useEffect(() => {
+    (async () => {
+      const leaflet = await import('leaflet');
+      if (typeof window !== 'undefined') {
+        require('leaflet/dist/leaflet.css');
+      }
+      setL(leaflet);
+    })();
+  }, []);
+
+  const customIcon = useMemo(() => {
+    if (!L) return undefined;
+    return new L.Icon({
+      iconUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png",
+      iconRetinaUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png",
+      shadowUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png",
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    });
+  }, [L]);
+
+  if (!L || !customIcon) {
+    return <div className="h-full w-full flex items-center justify-center"><p className="text-gray-500">Loading map...</p></div>;
+  }
+
   const routeCoordinates = stops.map(stop => [stop.coordinates.lat, stop.coordinates.lng])
 
   // Center map on first stop or default to Paris
