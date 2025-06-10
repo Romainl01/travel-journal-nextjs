@@ -1,12 +1,24 @@
 "use client"
 
 import { useState } from "react"
-import { Plus, MapPin, Calendar, Edit3 } from "lucide-react"
+import { Plus, MapPin, Calendar, Edit3, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import TravelMap from "./components/TravelMap"
+import { calculateTotalDistance } from "./utils/distance"
 
 interface TravelStop {
   id: string
@@ -45,6 +57,7 @@ export default function TravelJournal() {
     location: false,
     description: false,
   })
+  const [stopToDelete, setStopToDelete] = useState<TravelStop | null>(null)
 
   const handleAddStop = () => {
     const newErrors = {
@@ -73,6 +86,17 @@ export default function TravelJournal() {
       setNewStop({ date: "", location: "", description: "" })
       setShowForm(false)
       setErrors({ date: false, location: false, description: false })
+    }
+  }
+
+  const handleDeleteStop = (stop: TravelStop) => {
+    setStopToDelete(stop)
+  }
+
+  const confirmDelete = () => {
+    if (stopToDelete) {
+      setStops(stops.filter(stop => stop.id !== stopToDelete.id))
+      setStopToDelete(null)
     }
   }
 
@@ -193,8 +217,16 @@ export default function TravelJournal() {
               {stops.map((stop, index) => (
                 <Card
                   key={stop.id}
-                  className="p-6 border border-gray-200 rounded-xl hover:border-gray-300 transition-colors"
+                  className="p-6 border border-gray-200 rounded-xl hover:border-gray-300 transition-colors relative group"
                 >
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-2 right-2"
+                    onClick={() => handleDeleteStop(stop)}
+                  >
+                    <Trash2 className="h-4 w-4 text-gray-500 hover:text-red-500" />
+                  </Button>
                   <div className="flex items-start space-x-4">
                     <div className="flex-shrink-0">
                       <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
@@ -219,6 +251,27 @@ export default function TravelJournal() {
                 </Card>
               ))}
             </div>
+
+            {/* Delete Confirmation Dialog */}
+            <AlertDialog open={!!stopToDelete} onOpenChange={() => setStopToDelete(null)}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete Stop</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to delete the stop in {stopToDelete?.location}? This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={confirmDelete}
+                    className="bg-red-500 hover:bg-red-600 text-white"
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
 
           {/* Right Panel - Map */}
@@ -228,18 +281,13 @@ export default function TravelJournal() {
                 <h3 className="font-medium text-gray-900">Route Map</h3>
                 <p className="text-sm text-gray-500 mt-1">Your journey visualized</p>
               </div>
-              <div className="aspect-square bg-gray-50 flex items-center justify-center">
-                {/* Placeholder for Google Maps */}
-                <div className="text-center">
-                  <MapPin className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                  <p className="text-gray-500 text-sm">Interactive map will display here</p>
-                  <p className="text-gray-400 text-xs mt-1">Showing {stops.length} stops with connecting route</p>
-                </div>
+              <div className="aspect-square bg-gray-50">
+                <TravelMap stops={stops} />
               </div>
               <div className="p-4 border-t border-gray-100">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-600">Total Distance</span>
-                  <span className="font-medium text-gray-900">2,847 km</span>
+                  <span className="font-medium text-gray-900">{calculateTotalDistance(stops)} km</span>
                 </div>
               </div>
             </Card>
