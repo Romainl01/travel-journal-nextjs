@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Plus, MapPin, Calendar, Edit3, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -20,6 +20,8 @@ import {
 import TravelMap from "./components/TravelMap"
 import { calculateTotalDistance } from "./utils/distance"
 import LocationAutocomplete from "@/components/LocationAutocomplete"
+import JournalList from '@/components/JournalList'
+import { getLocations, getJournalEntries, createLocation, createJournalEntry, updateJournalEntry, deleteJournalEntry } from "@/lib/database"
 
 interface TravelStop {
   id: string
@@ -30,23 +32,9 @@ interface TravelStop {
 }
 
 export default function TravelJournal() {
-  const [stops, setStops] = useState<TravelStop[]>([
-    {
-      id: "1",
-      date: "2024-01-15",
-      location: "Paris, France",
-      coordinates: { lat: 48.8566, lng: 2.3522 },
-      description: "Started the journey at the Eiffel Tower. The city of lights never disappoints.",
-    },
-    {
-      id: "2",
-      date: "2024-01-18",
-      location: "Rome, Italy",
-      coordinates: { lat: 41.9028, lng: 12.4964 },
-      description: "Explored the Colosseum and Vatican City. Ancient history comes alive here.",
-    },
-  ])
-
+  const [stops, setStops] = useState<TravelStop[]>([])
+  const [journalEntries, setJournalEntries] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [newStop, setNewStop] = useState({
     date: "",
@@ -62,7 +50,30 @@ export default function TravelJournal() {
   })
   const [stopToDelete, setStopToDelete] = useState<TravelStop | null>(null)
 
-  const handleAddStop = () => {
+  useEffect(() => {
+    async function fetchData() {
+      setLoading(true)
+      try {
+        const locations = await getLocations()
+        setStops(locations.map(loc => ({
+          id: loc.id,
+          date: loc.created_at,
+          location: loc.name,
+          coordinates: { lat: loc.latitude, lng: loc.longitude },
+          description: loc.name // You may want to adjust this if you have a description field
+        })))
+        const entries = await getJournalEntries()
+        setJournalEntries(entries)
+      } catch (e) {
+        console.error(e)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchData()
+  }, [])
+
+  const handleAddStop = async () => {
     const newErrors = {
       date: !newStop.date,
       location: !newStop.location,
@@ -72,18 +83,32 @@ export default function TravelJournal() {
     setErrors(newErrors as any)
 
     if (newStop.date && newStop.location && newStop.description && newStop.coordinates) {
-      const stop: TravelStop = {
-        id: Date.now().toString(),
-        date: newStop.date,
-        location: newStop.location,
-        coordinates: newStop.coordinates,
-        description: newStop.description,
+      try {
+        // Create location in Supabase
+        const location = await createLocation(newStop.location, newStop.coordinates.lat, newStop.coordinates.lng)
+        // Create journal entry in Supabase
+        const entry = await createJournalEntry(
+          newStop.location, // title
+          newStop.description, // content
+          location.id // locationId
+        )
+        // Refresh data
+        const locations = await getLocations()
+        setStops(locations.map(loc => ({
+          id: loc.id,
+          date: loc.created_at,
+          location: loc.name,
+          coordinates: { lat: loc.latitude, lng: loc.longitude },
+          description: loc.name // Adjust if you have a description field
+        })))
+        const entries = await getJournalEntries()
+        setJournalEntries(entries)
+        setNewStop({ date: "", location: "", coordinates: null, description: "" })
+        setShowForm(false)
+        setErrors({ date: false, location: false, description: false, coordinates: false })
+      } catch (e) {
+        console.error(e)
       }
-
-      setStops([...stops, stop])
-      setNewStop({ date: "", location: "", coordinates: null, description: "" })
-      setShowForm(false)
-      setErrors({ date: false, location: false, description: false, coordinates: false })
     }
   }
 
@@ -91,10 +116,26 @@ export default function TravelJournal() {
     setStopToDelete(stop)
   }
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (stopToDelete) {
-      setStops(stops.filter(stop => stop.id !== stopToDelete.id))
-      setStopToDelete(null)
+      try {
+        // Delete journal entry in Supabase
+        await deleteJournalEntry(stopToDelete.id)
+        // Refresh data
+        const locations = await getLocations()
+        setStops(locations.map(loc => ({
+          id: loc.id,
+          date: loc.created_at,
+          location: loc.name,
+          coordinates: { lat: loc.latitude, lng: loc.longitude },
+          description: loc.name // Adjust if you have a description field
+        })))
+        const entries = await getJournalEntries()
+        setJournalEntries(entries)
+        setStopToDelete(null)
+      } catch (e) {
+        console.error(e)
+      }
     }
   }
 
@@ -212,44 +253,48 @@ export default function TravelJournal() {
             )}
 
             {/* Journey Timeline */}
-            <div className="space-y-4">
-              {stops.map((stop, index) => (
-                <Card
-                  key={stop.id}
-                  className="p-6 border border-gray-200 rounded-xl hover:border-gray-300 transition-colors relative group"
-                >
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="absolute top-2 right-2"
-                    onClick={() => handleDeleteStop(stop)}
+            {loading ? (
+              <div>Loading...</div>
+            ) : (
+              <div className="space-y-4">
+                {stops.map((stop, index) => (
+                  <Card
+                    key={stop.id}
+                    className="p-6 border border-gray-200 rounded-xl hover:border-gray-300 transition-colors relative group"
                   >
-                    <Trash2 className="h-4 w-4 text-gray-500 hover:text-red-500" />
-                  </Button>
-                  <div className="flex items-start space-x-4">
-                    <div className="flex-shrink-0">
-                      <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                        <span className="text-sm font-medium text-gray-600">{index + 1}</span>
-                      </div>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-3 mb-2">
-                        <h3 className="font-medium text-gray-900">{stop.location}</h3>
-                        <div className="flex items-center text-sm text-gray-500">
-                          <Calendar className="w-3 h-3 mr-1" />
-                          {new Date(stop.date).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute top-2 right-2"
+                      onClick={() => handleDeleteStop(stop)}
+                    >
+                      <Trash2 className="h-4 w-4 text-gray-500 hover:text-red-500" />
+                    </Button>
+                    <div className="flex items-start space-x-4">
+                      <div className="flex-shrink-0">
+                        <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
+                          <span className="text-sm font-medium text-gray-600">{index + 1}</span>
                         </div>
                       </div>
-                      <p className="text-gray-600 text-sm leading-relaxed">{stop.description}</p>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center space-x-3 mb-2">
+                          <h3 className="font-medium text-gray-900">{stop.location}</h3>
+                          <div className="flex items-center text-sm text-gray-500">
+                            <Calendar className="w-3 h-3 mr-1" />
+                            {new Date(stop.date).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            })}
+                          </div>
+                        </div>
+                        <p className="text-gray-600 text-sm leading-relaxed">{stop.description}</p>
+                      </div>
                     </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
+                  </Card>
+                ))}
+              </div>
+            )}
 
             {/* Delete Confirmation Dialog */}
             <AlertDialog open={!!stopToDelete} onOpenChange={() => setStopToDelete(null)}>
