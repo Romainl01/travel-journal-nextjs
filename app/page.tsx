@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Plus, MapPin, Calendar, Edit3, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -21,7 +22,7 @@ import TravelMap from "./components/TravelMap"
 import { calculateTotalDistance } from "./utils/distance"
 import LocationAutocomplete from "@/components/LocationAutocomplete"
 import JournalList from '@/components/JournalList'
-import { getLocations, getJournalEntries, createLocation, createJournalEntry, updateJournalEntry, deleteJournalEntry } from "@/lib/database"
+import { getLocations, getJournalEntries, createLocation, createJournalEntry, updateJournalEntry, deleteJournalEntry, deleteLocation } from "@/lib/database"
 
 interface TravelStop {
   id: string
@@ -32,6 +33,8 @@ interface TravelStop {
 }
 
 export default function TravelJournal() {
+  const router = useRouter()
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
   const [stops, setStops] = useState<TravelStop[]>([])
   const [journalEntries, setJournalEntries] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -51,27 +54,59 @@ export default function TravelJournal() {
   const [stopToDelete, setStopToDelete] = useState<TravelStop | null>(null)
 
   useEffect(() => {
-    async function fetchData() {
-      setLoading(true)
-      try {
-        const locations = await getLocations()
-        setStops(locations.map(loc => ({
-          id: loc.id,
-          date: loc.created_at,
-          location: loc.name,
-          coordinates: { lat: loc.latitude, lng: loc.longitude },
-          description: loc.name // You may want to adjust this if you have a description field
-        })))
-        const entries = await getJournalEntries()
-        setJournalEntries(entries)
-      } catch (e) {
-        console.error(e)
-      } finally {
-        setLoading(false)
-      }
+    // Check if user is authenticated
+    const token = localStorage.getItem('auth_token')
+    if (!token) {
+      setIsAuthenticated(false)
+      router.push('/auth')
+    } else {
+      setIsAuthenticated(true)
     }
-    fetchData()
-  }, [])
+  }, [router])
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      async function fetchData() {
+        setLoading(true)
+        try {
+          const locations = await getLocations()
+          const entries = await getJournalEntries()
+          // Only include locations that are referenced by a journal entry
+          const stopsData = entries.map(entry => {
+            const loc = locations.find(l => l.id === entry.location_id)
+            return loc ? {
+              id: loc.id,
+              date: loc.created_at,
+              location: loc.name,
+              coordinates: { lat: loc.latitude, lng: loc.longitude },
+              description: entry.content
+            } : null
+          }).filter((x): x is TravelStop => x !== null)
+          setStops(stopsData)
+          setJournalEntries(entries)
+        } catch (e) {
+          console.error(e)
+        } finally {
+          setLoading(false)
+        }
+      }
+      fetchData()
+    }
+  }, [isAuthenticated])
+
+  if (isAuthenticated === null) {
+    // Show a loading spinner or nothing while checking auth
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    // Optionally, you can return null here since router.push will redirect
+    return null
+  }
 
   const handleAddStop = async () => {
     const newErrors = {
@@ -83,32 +118,46 @@ export default function TravelJournal() {
     setErrors(newErrors as any)
 
     if (newStop.date && newStop.location && newStop.description && newStop.coordinates) {
+      let isMounted = true;
       try {
-        // Create location in Supabase
+        console.log('Creating location...')
         const location = await createLocation(newStop.location, newStop.coordinates.lat, newStop.coordinates.lng)
-        // Create journal entry in Supabase
+        console.log('Location created:', location)
+        console.log('Creating journal entry...')
         const entry = await createJournalEntry(
           newStop.location, // title
           newStop.description, // content
           location.id // locationId
         )
-        // Refresh data
+        console.log('Journal entry created:', entry)
+        console.log('Fetching locations...')
         const locations = await getLocations()
-        setStops(locations.map(loc => ({
+        if (isMounted) setStops(locations.map(loc => ({
           id: loc.id,
           date: loc.created_at,
           location: loc.name,
           coordinates: { lat: loc.latitude, lng: loc.longitude },
           description: loc.name // Adjust if you have a description field
         })))
+        console.log('Fetching journal entries...')
         const entries = await getJournalEntries()
-        setJournalEntries(entries)
-        setNewStop({ date: "", location: "", coordinates: null, description: "" })
-        setShowForm(false)
-        setErrors({ date: false, location: false, description: false, coordinates: false })
+        if (isMounted) setJournalEntries(entries)
+        if (isMounted) setNewStop({ date: "", location: "", coordinates: null, description: "" })
+        if (isMounted) setShowForm(false)
       } catch (e) {
-        console.error(e)
+        if (e && typeof e === 'object' && 'message' in e) {
+          // @ts-ignore
+          console.error('Error:', e.message)
+        } else {
+          // Ignore empty object errors
+          if (JSON.stringify(e) !== '{}') {
+            console.error('Unknown error:', e)
+          }
+        }
+        return
       }
+      if (isMounted) setErrors({ date: false, location: false, description: false, coordinates: false })
+      return () => { isMounted = false }
     }
   }
 
@@ -119,19 +168,39 @@ export default function TravelJournal() {
   const confirmDelete = async () => {
     if (stopToDelete) {
       try {
-        // Delete journal entry in Supabase
-        await deleteJournalEntry(stopToDelete.id)
-        // Refresh data
-        const locations = await getLocations()
-        setStops(locations.map(loc => ({
-          id: loc.id,
-          date: loc.created_at,
-          location: loc.name,
-          coordinates: { lat: loc.latitude, lng: loc.longitude },
-          description: loc.name // Adjust if you have a description field
-        })))
-        const entries = await getJournalEntries()
-        setJournalEntries(entries)
+        // Find the corresponding journal entry
+        const journalEntry = journalEntries.find(entry => entry.location_id === stopToDelete.id)
+        console.log('stopToDelete.id:', stopToDelete.id)
+        if (journalEntry) {
+          console.log('journalEntry.location_id:', journalEntry.location_id)
+          // Delete journal entry in Supabase using the correct ID
+          await deleteJournalEntry(journalEntry.id)
+
+          // Check if any other journal entry uses this location
+          const otherEntries = journalEntries.filter(entry => entry.location_id === stopToDelete.id && entry.id !== journalEntry.id)
+          console.log('otherEntries.length:', otherEntries.length)
+          if (otherEntries.length === 0) {
+            // No other journal entry uses this location, so delete the location
+            console.log('Calling deleteLocation with id:', stopToDelete.id)
+            await deleteLocation(stopToDelete.id)
+          }
+
+          // Refresh data
+          const locations = await getLocations()
+          const refreshedEntries = await getJournalEntries()
+          const stopsData = refreshedEntries.map(entry => {
+            const loc = locations.find(l => l.id === entry.location_id)
+            return loc ? {
+              id: loc.id,
+              date: loc.created_at,
+              location: loc.name,
+              coordinates: { lat: loc.latitude, lng: loc.longitude },
+              description: entry.content
+            } : null
+          }).filter((x): x is TravelStop => x !== null)
+          setStops(stopsData)
+          setJournalEntries(refreshedEntries)
+        }
         setStopToDelete(null)
       } catch (e) {
         console.error(e)

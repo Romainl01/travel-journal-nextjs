@@ -41,6 +41,21 @@ export async function createLocation(name: string, latitude: number, longitude: 
   return data as Location
 }
 
+export async function deleteLocation(id: string) {
+  console.log('Attempting to delete location with ID:', id)
+  const { data, error } = await supabase
+    .from('locations')
+    .delete()
+    .eq('id', id)
+    .select()
+  if (error) {
+    console.error('Error deleting location:', error)
+    throw error
+  }
+  console.log('Successfully deleted location:', data)
+  return data
+}
+
 // Journal Entry functions
 export async function getJournalEntries() {
   const { data, error } = await supabase
@@ -85,10 +100,19 @@ export async function updateJournalEntry(id: string, updates: Partial<JournalEnt
 }
 
 export async function deleteJournalEntry(id: string) {
-  const { error } = await supabase
+  console.log('Attempting to delete journal entry with ID:', id)
+  
+  const { data, error } = await supabase
     .from('journal_entries')
     .delete()
     .eq('id', id)
+    .select()
   
-  if (error) throw error
+  if (error) {
+    console.error('Error deleting journal entry:', error)
+    throw error
+  }
+  
+  console.log('Successfully deleted journal entry:', data)
+  return data
 } 
